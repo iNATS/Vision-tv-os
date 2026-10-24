@@ -10,10 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download project source archive
-        run: |
-          test -f vision-tv-launcher-source.zip
-          unzip -q vision-tv-launcher-source.zip
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -24,11 +20,114 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Generate minimal native Android TV launcher
+        run: |
+          mkdir -p app/src/main/java/com/visiontv/launcher
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = "VisionTVLauncher"
+          include(":app")
+          EOF
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+            id("com.android.application") version "8.7.3" apply false
+            id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+          }
+          EOF
+          echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8" > gradle.properties
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+            id("com.android.application")
+            id("org.jetbrains.kotlin.android")
+          }
+          android {
+            namespace = "com.visiontv.launcher"
+            compileSdk = 35
+            defaultConfig { applicationId = "com.visiontv.launcher"; minSdk = 30; targetSdk = 32; versionCode = 1; versionName = "1.0.0" }
+            compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+            kotlinOptions { jvmTarget = "17" }
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-feature android:name="android.software.leanback" android:required="false"/>
+            <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+            <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+            <application android:label="Vision TV" android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
+              <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape">
+                <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
+                <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/visiontv/launcher/MainActivity.kt <<'EOF'
+          package com.visiontv.launcher
+          import android.app.Activity
+          import android.os.Bundle
+          import android.content.Intent
+          import android.provider.Settings
+          import android.graphics.Color
+          import android.graphics.drawable.GradientDrawable
+          import android.view.Gravity
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import android.widget.Toast
+
+          class MainActivity : Activity() {
+            private fun card(text: String, action: () -> Unit): TextView = TextView(this).apply {
+              this.text = text; textSize = 18f; gravity = Gravity.CENTER
+              setTextColor(Color.WHITE); setPadding(20, 18, 20, 18)
+              background = GradientDrawable().apply { setColor(Color.rgb(25, 42, 67)); cornerRadius = 24f; setStroke(1, Color.rgb(64, 100, 135)) }
+              isFocusable = true
+              setOnFocusChangeListener { v, f -> v.animate().scaleX(if (f) 1.04f else 1f).scaleY(if (f) 1.04f else 1f).setDuration(140).start()
+                v.alpha = if (f) 1f else .86f }
+              setOnClickListener { action() }
+            }
+            override fun onCreate(savedInstanceState: Bundle?) {
+              super.onCreate(savedInstanceState)
+              window.statusBarColor = Color.rgb(7, 12, 27); window.navigationBarColor = Color.rgb(7, 12, 27)
+              val root = LinearLayout(this).apply { orientation = 1; setPadding(38, 26, 38, 22)
+                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(7,12,27), Color.rgb(17,32,58), Color.rgb(8,14,29))) }
+              root.addView(TextView(this).apply { text = "VISION"; textSize = 32f; setTextColor(Color.rgb(118,218,255)); letterSpacing = .18f })
+              root.addView(TextView(this).apply { text = "Your screen. Your space."; textSize = 24f; setTextColor(Color.WHITE); setPadding(0,10,0,18) })
+              val shortcuts = LinearLayout(this).apply { orientation = 0 }
+              shortcuts.addView(card("⚙   Settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) }, LinearLayout.LayoutParams(0,64,1f).apply { marginEnd = 12 })
+              shortcuts.addView(card("◈   Private DNS") {
+                try { startActivity(Intent("android.settings.PRIVATE_DNS_SETTINGS")) }
+                catch (_: Exception) { Toast.makeText(this@MainActivity, "Find Private DNS in Network settings", Toast.LENGTH_LONG).show() }
+              }, LinearLayout.LayoutParams(0,64,1f))
+              root.addView(shortcuts)
+              root.addView(TextView(this).apply { text = "YOUR APPS"; textSize = 13f; letterSpacing = .16f; setTextColor(Color.rgb(118,218,255)); setPadding(0,22,0,10) })
+              val grid = LinearLayout(this).apply { orientation = 1 }
+              val scroll = ScrollView(this)
+              val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0)
+                .filter { it.activityInfo.packageName != packageName }.distinctBy { it.activityInfo.packageName }
+                .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+              apps.chunked(4).forEach { group ->
+                val row = LinearLayout(this).apply { orientation = 0 }
+                group.forEach { info ->
+                  row.addView(card("▣   " + info.loadLabel(packageManager).toString()) {
+                    val launch = packageManager.getLaunchIntentForPackage(info.activityInfo.packageName)
+                    if (launch != null) try { startActivity(launch) } catch (_: Exception) {}
+                  }, LinearLayout.LayoutParams(0,82,1f).apply { marginEnd = 12; bottomMargin = 12 })
+                }
+                repeat(4-group.size) { row.addView(TextView(this), LinearLayout.LayoutParams(0,82,1f).apply { marginEnd = 12 }) }
+                grid.addView(row)
+              }
+              if (apps.isEmpty()) grid.addView(TextView(this).apply { text = "No TV apps found."; textSize = 18f; setTextColor(Color.LTGRAY) })
+              scroll.addView(grid); root.addView(scroll, LinearLayout.LayoutParams(-1,0,1f))
+              root.addView(TextView(this).apply { text = "Cinematic interface • Ads inside other apps may still appear"; textSize = 12f; gravity = Gravity.CENTER; setTextColor(Color.GRAY); setPadding(0,10,0,0) })
+              setContentView(root)
+            }
+          }
+          EOF
       - name: Build debug APK
-        working-directory: vision-tv-launcher
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: vision-tv-debug-apk
-          path: vision-tv-launcher/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
