@@ -11,9 +11,12 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
+import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -62,14 +65,20 @@ public final class MainActivity extends Activity {
     private static final int DOCK_BORDER = 0x38FFE8CC;
     private static final int WARM_AMBER = 0xFFE3B778;
 
+    // tvOS reference proportions (measured from the 1303x785 official home screenshot).
+    private static final int TILE_W = 122;
+    private static final int TILE_H = 88;
+    private static final int TILE_RADIUS = 14;
+    private static final int TILE_GAP = 24;
+    private static final int BAR_RADIUS = 32;
+    private static final int WALLPAPER_ACCENT = 0xFF3B7A8C;
+
     private final ArrayList<AppEntry> dockApps = new ArrayList<>();
     private final ArrayList<AppEntry> allApps = new ArrayList<>();
 
     private RecyclerView dock;
     private RecyclerView appsRow;
-    private View inputsButton;
     private TextView clock;
-    private TextView date;
     private TextView badge;
     private TextView title;
     private TextView meta;
@@ -191,10 +200,14 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         if (recRow != null && recRow.hasFocus()) {
-            focusAppsRow(0);
-        } else {
             focusDock(0);
+            return;
         }
+        if (appsRow != null && appsRow.hasFocus()) {
+            focusDock(0);
+            return;
+        }
+        // tvOS keeps the Home screen in place on Back; it does not exit to another launcher.
     }
 
     private View buildScene() {
@@ -206,97 +219,23 @@ public final class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(40), dp(16), dp(40), dp(12));
+        root.setPadding(dp(36), dp(24), dp(36), dp(24));
         scene.addView(root, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setClipChildren(false);
-        root.addView(header, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        LinearLayout identity = new LinearLayout(this);
-        identity.setOrientation(LinearLayout.VERTICAL);
-        identity.setGravity(Gravity.CENTER_VERTICAL);
-        TextView wordmark = text("Vision TV", 13, TEXT_PRIMARY, MEDIUM);
-        wordmark.setLetterSpacing(0.02f);
-        date = text("", 9, TEXT_TERTIARY, NORMAL);
-        date.setLetterSpacing(0.12f);
-        date.setSingleLine(true);
-        identity.addView(wordmark);
-        LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dateParams.topMargin = dp(2);
-        identity.addView(date, dateParams);
-        header.addView(identity, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setClipChildren(false);
-        inputsButton = iconPill("Inputs", R.drawable.ic_inputs, v -> showInputs());
-        View wifi = iconPill("Wi-Fi", R.drawable.ic_wifi,
-                v -> openSettings(Settings.ACTION_WIFI_SETTINGS));
-        View settings = iconPill("Settings", R.drawable.ic_settings,
-                v -> openSettings(Settings.ACTION_SETTINGS));
-        View[] topButtons = {inputsButton, wifi, settings};
-        for (View button : topButtons) {
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(32), dp(32));
-            params.setMargins(dp(8), 0, 0, 0);
-            actions.addView(button, params);
-            button.setOnKeyListener((view, code, event) -> {
-                if (event.getAction() == KeyEvent.ACTION_DOWN
-                        && code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    focusAppsRow(0);
-                    return true;
-                }
-                return false;
-            });
-        }
-        header.addView(actions);
-
-        clock = text("", 12, TEXT_SECONDARY, MEDIUM);
-        clock.setLetterSpacing(0.02f);
-        LinearLayout.LayoutParams clockParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        clockParams.setMargins(dp(18), 0, 0, 0);
-        header.addView(clock, clockParams);
-
-        appsRow = new RecyclerView(this);
-        appsRow.setClipToPadding(false);
-        appsRow.setClipChildren(false);
-        appsRow.setPadding(dp(2), dp(6), dp(2), dp(2));
-        appsRow.setLayoutManager(new LinearLayoutManager(
-                this, RecyclerView.HORIZONTAL, false));
-        appsRow.setAdapter(new AppsAdapter(allApps, false));
-        appsRow.setItemAnimator(null);
-        appsRow.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        appsRow.setVerticalScrollBarEnabled(false);
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(132));
-        rowParams.topMargin = dp(8);
-        root.addView(appsRow, rowParams);
-
-        View spacer = new View(this);
-        root.addView(spacer, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
         metadata = new LinearLayout(this);
         metadata.setOrientation(LinearLayout.VERTICAL);
         metadata.setClipChildren(false);
+        metadata.setAlpha(0f);
         root.addView(metadata, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         badge = text("", 9, TEXT_CHAMPAGNE, MEDIUM);
         badge.setLetterSpacing(0.16f);
         badge.setSingleLine(true);
-        badge.setText("VISION TV");
         metadata.addView(badge);
 
-        title = text("", 27, TEXT_PRIMARY, MEDIUM);
+        title = text("", 26, TEXT_PRIMARY, MEDIUM);
         title.setLetterSpacing(-0.02f);
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
@@ -320,7 +259,7 @@ public final class MainActivity extends Activity {
         overview.setMaxLines(2);
         overview.setEllipsize(TextUtils.TruncateAt.END);
         overview.setLineSpacing(0f, 1.12f);
-        overview.setMaxWidth(dp(620));
+        overview.setMaxWidth(dp(560));
         overview.setShadowLayer(16f, 0f, 3f, 0x99000000);
         LinearLayout.LayoutParams overviewParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -336,50 +275,17 @@ public final class MainActivity extends Activity {
         attributionParams.topMargin = dp(3);
         metadata.addView(attribution, attributionParams);
 
-        recSection = new LinearLayout(this);
-        recSection.setOrientation(LinearLayout.VERTICAL);
-        recSection.setClipChildren(false);
-        recSection.setVisibility(View.GONE);
-        LinearLayout.LayoutParams recSectionParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        recSectionParams.topMargin = dp(9);
-        root.addView(recSection, recSectionParams);
+        View spacer = new View(this);
+        root.addView(spacer, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
-        recLabel = text("", 9, TEXT_CHAMPAGNE, MEDIUM);
-        recLabel.setLetterSpacing(0.16f);
-        recLabel.setSingleLine(true);
-        recSection.addView(recLabel);
-
-        recRow = new RecyclerView(this);
-        recRow.setClipToPadding(false);
-        recRow.setClipChildren(false);
-        recRow.setPadding(dp(2), dp(4), dp(2), dp(4));
-        recRow.setLayoutManager(new LinearLayoutManager(
-                this, RecyclerView.HORIZONTAL, false));
-        recAdapter = new RecommendationsAdapter();
-        recRow.setAdapter(recAdapter);
-        recRow.setItemAnimator(null);
-        recRow.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        recRow.setVerticalScrollBarEnabled(false);
-        LinearLayout.LayoutParams recRowParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(100));
-        recRowParams.topMargin = dp(3);
-        recSection.addView(recRow, recRowParams);
-
-        LinearLayout dockWrap = new LinearLayout(this);
-        dockWrap.setGravity(Gravity.CENTER);
-        dockWrap.setOrientation(LinearLayout.HORIZONTAL);
-        dockWrap.setClipChildren(false);
-
-        LinearLayout dockBand = new LinearLayout(this);
-        dockBand.setGravity(Gravity.CENTER);
-        dockBand.setClipChildren(false);
-        dockBand.setClipToPadding(false);
-        dockBand.setPadding(dp(12), 0, dp(12), 0);
-        dockBand.setBackground(glass(DOCK_SURFACE, 24, DOCK_BORDER));
-        dockBand.setElevation(dp(14));
-        dockBand.setOutlineSpotShadowColor(0x2EFFFFFF);
-        dockBand.setOutlineAmbientShadowColor(0x14000000);
+        LinearLayout barBand = new LinearLayout(this);
+        barBand.setGravity(Gravity.CENTER);
+        barBand.setClipChildren(false);
+        barBand.setClipToPadding(false);
+        barBand.setPadding(dp(6), dp(8), dp(6), dp(8));
+        barBand.setBackground(glass(0x33000000, BAR_RADIUS, 0x30FFFFFF));
+        barBand.setElevation(dp(10));
 
         dock = new RecyclerView(this);
         dock.setClipToPadding(false);
@@ -387,18 +293,67 @@ public final class MainActivity extends Activity {
         dock.setOverScrollMode(View.OVER_SCROLL_NEVER);
         dock.setVerticalScrollBarEnabled(false);
         dock.setHorizontalScrollBarEnabled(false);
-        dock.setLayoutManager(new LinearLayoutManager(
-                this, RecyclerView.HORIZONTAL, false));
+        dock.setLayoutManager(new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false));
         dock.setAdapter(new AppsAdapter(dockApps, true));
         dock.setItemAnimator(null);
-        dockBand.addView(dock, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(80)));
-        dockWrap.addView(dockBand, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(86)));
-        LinearLayout.LayoutParams dockParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(86));
-        dockParams.topMargin = dp(8);
-        root.addView(dockWrap, dockParams);
+        barBand.addView(dock, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(TILE_H)));
+        root.addView(barBand, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(TILE_H + 16)));
+
+        appsRow = new RecyclerView(this);
+        appsRow.setClipToPadding(false);
+        appsRow.setClipChildren(false);
+        appsRow.setPadding(0, dp(8), 0, dp(8));
+        appsRow.setLayoutManager(new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false));
+        appsRow.setAdapter(new AppsAdapter(allApps, false));
+        appsRow.setItemAnimator(null);
+        appsRow.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        appsRow.setVerticalScrollBarEnabled(false);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(TILE_H + 16));
+        rowParams.topMargin = dp(6);
+        root.addView(appsRow, rowParams);
+
+        // Recommendations stay wired but are deferred to a later stage.
+        recSection = new LinearLayout(this);
+        recSection.setOrientation(LinearLayout.VERTICAL);
+        recSection.setVisibility(View.GONE);
+        recRow = new RecyclerView(this);
+        recRow.setLayoutManager(new LinearLayoutManager(this, RecyclerView.HORIZONTAL, false));
+        recAdapter = new RecommendationsAdapter();
+        recRow.setAdapter(recAdapter);
+        recLabel = text("", 9, TEXT_CHAMPAGNE, MEDIUM);
+
+        LinearLayout profile = new LinearLayout(this);
+        profile.setOrientation(LinearLayout.HORIZONTAL);
+        profile.setGravity(Gravity.CENTER_VERTICAL);
+        profile.setPadding(dp(12), 0, dp(4), 0);
+        profile.setBackground(glass(0x40000000, 17, 0x30FFFFFF));
+        profile.setElevation(dp(8));
+        profile.setFocusable(true);
+        profile.setContentDescription("Time and profile");
+
+        clock = text("", 13, TEXT_PRIMARY, MEDIUM);
+        clock.setLetterSpacing(0.02f);
+        profile.addView(clock, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView avatar = text("A", 11, Color.WHITE, MEDIUM);
+        avatar.setGravity(Gravity.CENTER);
+        GradientDrawable avatarBg = new GradientDrawable();
+        avatarBg.setShape(GradientDrawable.OVAL);
+        avatarBg.setColor(0xFF3A3A3C);
+        avatarBg.setStroke(dp(1), 0x66FFFFFF);
+        avatar.setBackground(avatarBg);
+        LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(dp(24), dp(24));
+        avatarParams.setMargins(dp(10), 0, 0, 0);
+        profile.addView(avatar, avatarParams);
+
+        FrameLayout.LayoutParams profileParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(34), Gravity.TOP | Gravity.RIGHT);
+        profileParams.setMargins(0, dp(22), dp(36), 0);
+        scene.addView(profile, profileParams);
 
         updateClock();
         return scene;
@@ -560,6 +515,14 @@ public final class MainActivity extends Activity {
         featured = entry;
         preferences.edit().putString("last-package", entry.packageName).apply();
         final int accent = entry.accent();
+        boolean barApp = indexOf(dockApps, entry.packageName) >= 0;
+
+        if (!barApp) {
+            backdrop.showWallpaper(WALLPAPER_ACCENT);
+            hideMetadata();
+            return;
+        }
+
         backdrop.showFallback(entry.icon, sceneFor(entry), accent);
         backdrop.setParallax(focusOffset);
         metadata.animate()
@@ -590,8 +553,11 @@ public final class MainActivity extends Activity {
                     content.title, content.metaLine, content.overview, true);
         });
 
-        loadRecommendations(entry, generation);
         prefetchNeighbours(entry.packageName);
+    }
+
+    private void hideMetadata() {
+        metadata.animate().alpha(0f).setDuration(animationMs).start();
     }
 
     private void loadRecommendations(AppEntry entry, int generation) {
@@ -667,6 +633,12 @@ public final class MainActivity extends Activity {
         overview.setVisibility(TextUtils.isEmpty(overviewText) ? View.INVISIBLE : View.VISIBLE);
         attribution.setText(attributionText);
         attribution.setVisibility(showAttribution ? View.VISIBLE : View.GONE);
+        if (metadata.getAlpha() < 1f) {
+            metadata.animate()
+                    .alpha(1f)
+                    .setDuration(animationMs == 0 ? 0 : 240)
+                    .start();
+        }
         if (titleChanged) {
             metadata.animate().cancel();
             metadata.setAlpha(0.35f);
@@ -722,8 +694,6 @@ public final class MainActivity extends Activity {
     private void updateClock() {
         Date now = new Date();
         clock.setText(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(now));
-        date.setText(new SimpleDateFormat("EEEE d MMMM", Locale.getDefault())
-                .format(now).toUpperCase(Locale.getDefault()));
         clock.postDelayed(this::updateClock, 30000);
     }
 
@@ -986,48 +956,11 @@ public final class MainActivity extends Activity {
         }
 
         void bind(AppEntry entry, int position) {
-            tile.icon.setImageDrawable(entry.icon);
-            tile.label.setText(entry.label);
-            tile.setContentDescription(entry.label);
-            tile.accent = entry.accent();
-            tile.setPlated(entry.icon == null || entry.icon.getOpacity() != PixelFormat.OPAQUE);
-            tile.iconFrame.setBackground(tile.hasFocus()
-                    ? tile.focusIconBackground : tile.idleIconBackground);
-            tile.bloom.setBackground(tile.bloomDrawable());
+            tile.bind(entry);
             tile.setOnClickListener(v -> launch(entry));
 
             tile.setOnFocusChangeListener((view, focused) -> {
-                float scale = tile.isDock ? 1.09f : 1.12f;
-                int[] location = new int[2];
-                view.getLocationOnScreen(location);
-                float centerX = location[0] + view.getWidth() / 2f;
-                float screenCenter = getResources().getDisplayMetrics().widthPixels / 2f;
-                float tilt = 0f;
-                if (focused) {
-                    tilt = Math.max(-7f, Math.min(7f,
-                            (centerX - screenCenter) / screenCenter * 10f));
-                }
-                tile.animate()
-                        .scaleX(focused ? scale : 1f)
-                        .scaleY(focused ? scale : 1f)
-                        .rotationY(tilt)
-                        .translationY(focused ? -dp(tile.isDock ? 3 : 6) : 0f)
-                        .setDuration(animationMs)
-                        .setInterpolator(focusInterpolator)
-                        .start();
-                tile.icon.setTranslationX(focused ? -tilt * dp(1) * 0.7f : 0f);
-                tile.bloom.animate()
-                        .alpha(focused ? 1f : 0f)
-                        .setDuration(animationMs)
-                        .start();
-                tile.iconFrame.setBackground(focused
-                        ? tile.focusIconBackground : tile.idleIconBackground);
-                tile.iconFrame.setElevation(focused ? dp(18) : dp(2));
-                tile.iconFrame.setOutlineSpotShadowColor(focused
-                        ? withAlpha(tile.accent, 0xCC) : 0x00000000);
-                tile.iconFrame.setOutlineAmbientShadowColor(focused
-                        ? withAlpha(tile.accent, 0x55) : 0x00000000);
-                tile.label.setTextColor(focused ? Color.WHITE : TEXT_SECONDARY);
+                tile.setFocused(focused);
                 if (focused) feature(entry);
             });
 
@@ -1036,27 +969,14 @@ public final class MainActivity extends Activity {
                 int count = tile.isDock ? dockApps.size() : allApps.size();
                 if (code == KeyEvent.KEYCODE_DPAD_LEFT && position == 0) return true;
                 if (code == KeyEvent.KEYCODE_DPAD_RIGHT && position == count - 1) return true;
-                if (tile.isDock) {
-                    if (code == KeyEvent.KEYCODE_DPAD_UP) {
-                        if (recSection != null && recSection.getVisibility() == View.VISIBLE) {
-                            focusRec(0);
-                        } else {
-                            focusAppsRow(position);
-                        }
-                        return true;
-                    }
-                    return false;
-                }
                 if (code == KeyEvent.KEYCODE_DPAD_UP) {
-                    inputsButton.requestFocus();
+                    if (tile.isDock) return true;
+                    focusDock(Math.min(position, dockApps.size() - 1));
                     return true;
                 }
                 if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    if (recSection != null && recSection.getVisibility() == View.VISIBLE) {
-                        focusRec(0);
-                    } else {
-                        focusDock(position);
-                    }
+                    if (!tile.isDock) return true;
+                    focusAppsRow(position);
                     return true;
                 }
                 return false;
@@ -1065,14 +985,10 @@ public final class MainActivity extends Activity {
     }
 
     private final class AppTile extends FrameLayout {
-        final ImageView icon;
-        final TextView label;
-        final FrameLayout iconFrame;
-        final View bloom;
+        final ImageView art;
+        final FrameLayout artFrame;
+        final View halo;
         final boolean isDock;
-        Drawable focusIconBackground;
-        Drawable idleIconBackground;
-        int radius;
         int accent = 0xFF3B3B4E;
 
         AppTile(Context context, boolean isDock) {
@@ -1082,91 +998,93 @@ public final class MainActivity extends Activity {
             setFocusableInTouchMode(true);
             setClipChildren(false);
             setPadding(0, 0, 0, 0);
-            setCameraDistance(dp(1800));
 
-            int frameSize = isDock ? dp(50) : dp(84);
-            radius = isDock ? 12 : 20;
+            halo = new HaloView(context);
+            addView(halo, new FrameLayout.LayoutParams(
+                    dp(TILE_W + 18), dp(TILE_H + 18), Gravity.CENTER));
 
-            focusIconBackground = rounded(ICON_SURFACE, radius, 2, FOCUS_RING);
-            idleIconBackground = rounded(ICON_SURFACE, radius, 1, ICON_BORDER);
+            artFrame = new FrameLayout(context);
+            artFrame.setClipToOutline(true);
+            artFrame.setBackground(rounded(0xFF1C1C1E, TILE_RADIUS, 1, 0x24FFFFFF));
 
-            bloom = new View(context);
-            bloom.setAlpha(0f);
-            bloom.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            FrameLayout.LayoutParams bloomParams = new FrameLayout.LayoutParams(
-                    frameSize + dp(54), frameSize + dp(54), Gravity.CENTER);
-            addView(bloom, bloomParams);
-
-            iconFrame = new FrameLayout(context);
-            iconFrame.setClipToOutline(true);
-            iconFrame.setBackground(idleIconBackground);
-            iconFrame.setElevation(dp(2));
-            iconFrame.setOutlineSpotShadowColor(0x00000000);
-            iconFrame.setOutlineAmbientShadowColor(0x00000000);
-
-            icon = new ImageView(context);
-            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            int iconPadding = isDock ? dp(3) : dp(6);
-            icon.setPadding(iconPadding, iconPadding, iconPadding, iconPadding);
-            iconFrame.addView(icon, new FrameLayout.LayoutParams(
+            art = new ImageView(context);
+            art.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            artFrame.addView(art, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
             View sheen = new View(context);
             GradientDrawable gloss = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                    new int[]{0x1FFFF6E9, 0x08FFE7C6, 0x00000000});
-            gloss.setCornerRadius(dp(radius));
+                    new int[]{0x1AFFFFFF, 0x00FFFFFF});
+            gloss.setCornerRadius(dp(TILE_RADIUS));
             sheen.setBackground(gloss);
             sheen.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            iconFrame.addView(sheen, new FrameLayout.LayoutParams(
+            artFrame.addView(sheen, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-            LinearLayout content = new LinearLayout(context);
-            content.setOrientation(LinearLayout.VERTICAL);
-            content.setGravity(Gravity.CENTER_HORIZONTAL);
-            content.setClipChildren(false);
-            content.setClipToPadding(false);
-            content.addView(iconFrame, new LinearLayout.LayoutParams(frameSize, frameSize));
+            addView(artFrame, new FrameLayout.LayoutParams(
+                    dp(TILE_W), dp(TILE_H), Gravity.CENTER));
 
-            label = text("", isDock ? 9 : 10, TEXT_SECONDARY, MEDIUM);
-            label.setGravity(Gravity.CENTER);
-            label.setSingleLine(true);
-            label.setEllipsize(TextUtils.TruncateAt.END);
-            label.setLetterSpacing(0.01f);
-            label.setShadowLayer(8f, 0f, 2f, 0xCC000000);
-            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(16));
-            labelParams.topMargin = isDock ? dp(3) : dp(6);
-            content.addView(label, labelParams);
-
-            addView(content, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-            int tileWidth = isDock ? dp(68) : dp(96);
-            int tileHeight = isDock ? dp(78) : dp(122);
-            RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(tileWidth, tileHeight);
-            params.setMargins(dp(4), dp(isDock ? 2 : 4), dp(4), dp(isDock ? 2 : 4));
+            RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
+                    dp(TILE_W), dp(TILE_H));
+            params.setMargins(dp(TILE_GAP / 2), 0, dp(TILE_GAP / 2), 0);
             setLayoutParams(params);
         }
 
-        void setPlated(boolean plated) {
-            focusIconBackground = plated
-                    ? rounded(ICON_SURFACE, radius, 2, FOCUS_RING)
-                    : rounded(Color.TRANSPARENT, radius, 2, 0xCCFFFFFF);
-            idleIconBackground = plated
-                    ? rounded(ICON_SURFACE, radius, 1, ICON_BORDER)
-                    : rounded(Color.TRANSPARENT, radius, 0, Color.TRANSPARENT);
-            iconFrame.setBackground(hasFocus() ? focusIconBackground : idleIconBackground);
+        void bind(AppEntry entry) {
+            setContentDescription(entry.label);
+            accent = entry.accent();
+            Drawable banner = entry.banner(getApplicationContext());
+            if (banner != null) {
+                art.setPadding(0, 0, 0, 0);
+                art.setImageDrawable(banner);
+                artFrame.setBackground(rounded(entry.bannerBackground(), TILE_RADIUS, 0, 0));
+            } else {
+                art.setPadding(dp(14), dp(14), dp(14), dp(14));
+                art.setImageDrawable(entry.icon);
+                artFrame.setBackground(rounded(accent, TILE_RADIUS, 0, 0));
+            }
         }
 
-        Drawable bloomDrawable() {
-            GradientDrawable glow = new GradientDrawable();
-            glow.setShape(GradientDrawable.OVAL);
-            glow.setGradientType(GradientDrawable.RADIAL_GRADIENT);
-            glow.setGradientRadius(dp(isDock ? 58 : 96));
-            glow.setGradientCenter(0.5f, 0.5f);
-            int warm = blend(accent, WARM_AMBER, 0.18f);
-            glow.setColors(new int[]{withAlpha(warm, 0x70), withAlpha(warm, 0x26), 0x00000000});
-            return glow;
+        void setFocused(boolean focused) {
+            animate()
+                    .scaleX(focused ? 1.05f : 1f)
+                    .scaleY(focused ? 1.05f : 1f)
+                    .translationY(focused ? -dp(2) : 0f)
+                    .setDuration(animationMs)
+                    .setInterpolator(focusInterpolator)
+                    .start();
+            halo.animate().alpha(focused ? 1f : 0f).setDuration(animationMs).start();
+            artFrame.setElevation(focused ? dp(10) : 0);
+        }
+    }
+
+    /** Soft white halo drawn outside the tile, matching the tvOS focus treatment. */
+    private final class HaloView extends View {
+        private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+
+        HaloView(Context context) {
+            super(context);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+            setAlpha(0f);
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeWidth(dp(2));
+            ring.setColor(0xE6FFFFFF);
+            glow.setStyle(Paint.Style.STROKE);
+            glow.setStrokeWidth(dp(6));
+            glow.setColor(0x2EFFFFFF);
+            glow.setMaskFilter(new BlurMaskFilter(dp(10), BlurMaskFilter.Blur.NORMAL));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float inset = dp(5);
+            rect.set(inset, inset, getWidth() - inset, getHeight() - inset);
+            float radius = dp(TILE_RADIUS + 4);
+            canvas.drawRoundRect(rect, radius, radius, glow);
+            canvas.drawRoundRect(rect, radius, radius, ring);
         }
     }
 
@@ -1176,6 +1094,9 @@ public final class MainActivity extends Activity {
         final Drawable icon;
         Bitmap scene;
         int accent;
+        private Drawable banner;
+        private boolean bannerResolved;
+        private int bannerBg;
 
         AppEntry(String packageName, String label, Drawable icon) {
             this.packageName = packageName;
@@ -1186,6 +1107,73 @@ public final class MainActivity extends Activity {
         int accent() {
             if (accent == 0) accent = dominantColor(icon);
             return accent;
+        }
+
+        /** tvOS-style landscape art: the app's own Android TV banner, when it ships one. */
+        Drawable banner(Context context) {
+            if (!bannerResolved) {
+                bannerResolved = true;
+                banner = loadBanner(context, packageName);
+            }
+            return banner;
+        }
+
+        int bannerBackground() {
+            if (bannerBg == 0) {
+                bannerBg = banner == null ? accent() : edgeColor(banner);
+            }
+            return bannerBg;
+        }
+    }
+
+    private static Drawable loadBanner(Context context, String packageName) {
+        PackageManager pm = context.getPackageManager();
+        try {
+            int resId = 0;
+            Intent leanback = pm.getLeanbackLaunchIntentForPackage(packageName);
+            ResolveInfo resolved = leanback == null ? null : pm.resolveActivity(leanback, 0);
+            if (resolved != null && resolved.activityInfo != null) {
+                resId = resolved.activityInfo.banner;
+            }
+            ApplicationInfo app = pm.getApplicationInfo(packageName, 0);
+            if (resId == 0) resId = app.banner;
+            if (resId == 0) return null;
+            return pm.getResourcesForApplication(app).getDrawable(resId, null);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** Samples the banner's corners so the letterbox around 16:9 art blends in. */
+    private static int edgeColor(Drawable drawable) {
+        try {
+            Bitmap bitmap = Bitmap.createBitmap(32, 18, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            drawable.setBounds(0, 0, 32, 18);
+            drawable.draw(canvas);
+            int[][] points = {{0, 0}, {31, 0}, {0, 17}, {31, 17}};
+            long r = 0;
+            long g = 0;
+            long b = 0;
+            int count = 0;
+            for (int[] point : points) {
+                int pixel = bitmap.getPixel(point[0], point[1]);
+                if (Color.alpha(pixel) < 200) continue;
+                r += Color.red(pixel);
+                g += Color.green(pixel);
+                b += Color.blue(pixel);
+                count++;
+            }
+            bitmap.recycle();
+            if (count == 0) return 0xFF1C1C1E;
+            int rr = (int) (r / count);
+            int gg = (int) (g / count);
+            int bb = (int) (b / count);
+            return Color.rgb((rr * 94 + 255 * 6) / 100,
+                    (gg * 94 + 255 * 6) / 100,
+                    (bb * 94 + 255 * 6) / 100);
+        } catch (Exception ignored) {
+            return 0xFF1C1C1E;
         }
     }
 }

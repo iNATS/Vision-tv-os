@@ -59,21 +59,21 @@ final class CinematicBackdrop extends FrameLayout {
         View veil = new View(getContext());
         veil.setBackground(new android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                new int[]{0x1AFFD7A0, 0x0DFFB98A, 0x00000000}));
+                new int[]{0x0CFFFFFF, 0x06000000, 0x00000000}));
         veil.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(veil, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
-        addView(scrim(Gravity.TOP, dp(150),
-                0x990B0908, 0x400B0908, 0x00000000),
-                new LayoutParams(LayoutParams.MATCH_PARENT, dp(150), Gravity.TOP));
+        addView(scrim(Gravity.TOP, dp(170),
+                0x8C0B0908, 0x330B0908, 0x00000000),
+                new LayoutParams(LayoutParams.MATCH_PARENT, dp(170), Gravity.TOP));
 
-        View left = scrim(Gravity.LEFT, 0, 0xD90B0908, 0x660B0908, 0x00000000);
-        LayoutParams leftParams = new LayoutParams(dp(760), LayoutParams.MATCH_PARENT, Gravity.LEFT);
+        View left = scrim(Gravity.LEFT, 0, 0xB30B0908, 0x4D0B0908, 0x00000000);
+        LayoutParams leftParams = new LayoutParams(dp(620), LayoutParams.MATCH_PARENT, Gravity.LEFT);
         addView(left, leftParams);
 
         View bottom = scrim(Gravity.BOTTOM, 0,
-                0x00000000, 0x00000000, 0xE60B0908, 0xFF0A0807);
-        addView(bottom, new LayoutParams(LayoutParams.MATCH_PARENT, dp(330), Gravity.BOTTOM));
+                0x00000000, 0x00000000, 0xCC0B0908);
+        addView(bottom, new LayoutParams(LayoutParams.MATCH_PARENT, dp(300), Gravity.BOTTOM));
     }
 
     private ImageView artworkView(Context context) {
@@ -121,6 +121,11 @@ final class CinematicBackdrop extends FrameLayout {
             visible = null;
         }
         stopDrift();
+    }
+
+    /** Neutral wallpaper state used when no top-row app is focused. */
+    void showWallpaper(int accentColor) {
+        showFallback(null, null, accentColor);
     }
 
     void showArtwork(Bitmap bitmap, int accentColor) {
@@ -193,9 +198,6 @@ final class CinematicBackdrop extends FrameLayout {
         if (drift != null) {
             drift.cancel();
             drift = null;
-        }
-        for (ImageView view : new ImageView[]{artA, artB}) {
-            view.animate().cancel();
         }
     }
 

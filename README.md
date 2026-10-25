@@ -1,40 +1,40 @@
 # Vision TV Home
 
-A cinematic Android TV launcher inspired by Apple TV's full-bleed artwork and Vision Pro's
-layered glass. Built as a native Java app (`com.aref.visiontv`) for TCL / Android TV (SDK 30+).
+A cinematic Android TV launcher modelled on the tvOS 26/27 Liquid Glass home screen.
+Built as a native Java app (`com.aref.visiontv`) for TCL / Android TV (SDK 30+).
 
 ## What it does
 
-- **Full-screen featured artwork.** Focusing a streaming app crossfades the entire background to
+- **tvOS-style app bar.** A floating glass bar holds the six pinned apps as landscape tiles,
+  using each app's own Android TV banner art. Apps without a banner get a composite tile built
+  from their real icon and brand colour. No text labels, as in the reference.
+- **Second app row.** Every other launchable TV app sits in a scrollable row below the bar,
+  directly on the wallpaper.
+- **Full-screen featured artwork.** Focusing a top-bar streaming app crossfades the background to
   a real backdrop from TMDB, with title, year, rating, genres and synopsis.
-- **Atmospheric fallback.** No key, no network or unsupported app: a painterly accent bloom built
-  from the app's own icon colours, with the app icon ghosted into the scene. Never a blank screen.
-- **Glass icons.** Rounded app art, specular sheen, accent bloom, edge light and a restrained
-  ±7° depth tilt toward the focused position.
-- **Hover recommendations.** Focusing a mapped streaming app reveals a discovery row of real
-  titles and artwork; the row stays hidden when no real data is available.
-- **Floating dock.** Centred translucent pill with the six pinned apps and labels.
-- **Metadata layer.** Readable lower-left block over adaptive scrims.
+- **Wallpaper state.** Focusing an app outside the top bar, or an app with no cinematic data,
+  returns to a calm teal wallpaper instead of showing unrelated artwork.
+- **Soft focus halo.** A 1.05 scale and a white halo ring drawn outside the tile; the artwork
+  keeps its original colours and there is no 3D tilt.
 - **Calm motion.** 230 ms focus springs, 650 ms artwork crossfade, 26 s Ken Burns drift, and a
   reduced-motion mode that follows the system animation scale.
 
 ## Design system
 
-Warm cinematic glassmorphism, tuned for 10-foot viewing:
+Neutral glass over the artwork, with colour coming from the app art itself:
 
 | Token | Value | Use |
 | --- | --- | --- |
-| Warm charcoal | `#0A0807` / `#0B0908` | scrims, window |
-| Smoked bronze | `#8A6A46` | default ambience |
-| Soft amber | `#E3B778` | icon bloom blend, glass sheen |
-| Champagne | `#E8D5B8` | badges, secondary labels |
-| Warm ivory | `#FFF8F0` | primary type |
-| Focus rim | `#FFF4E2` | focused icon edge |
+| Tile | `122 × 88 dp` | landscape app tile |
+| Tile radius | `14 dp` | app tile corners |
+| Tile gap | `24 dp` | spacing between tiles |
+| Bar radius | `32 dp` | floating glass bar |
+| Focus halo | `#E6FFFFFF` ring + soft glow | focused tile |
+| Wallpaper | `#3B7A8C` | neutral ambient state |
 
-Ambience is sampled from the displayed artwork (warm-shifted) so artwork, bloom, dock and
-focus light share one palette. Artwork sits under a filmic warm veil, warm top/left/bottom
-scrims, and a floating warm-glass dock. Motion: 230 ms focus spring, 500 ms parallax,
-650 ms artwork crossfade, 26 s Ken Burns, all suspended under reduced-motion settings.
+Scrims are neutral black, not warm bronze: a top gradient for the title, a left gradient for
+readability, and a bottom gradient behind the bar.
+
 
 ## Supported providers (TMDB watch-provider mapping)
 
@@ -54,39 +54,32 @@ Everything else (YouTube, YouTube Music, AirCast, Live TV, games, tools) uses th
 YouTube and Plex are intentionally not mapped: TMDB has no reliable public provider feed for them,
 and inventing metadata would be wrong.
 
-## Recommendations (Android TV 11-style hover row)
+## Recommendations (wired, currently hidden)
 
-Focusing a mapped app reveals a horizontal recommendation row under the metadata block, the way the
-stock Android TV 11 launcher surfaces content when an app tile is highlighted.
+The TMDB discovery engine and recommendation cards still exist, but the row is hidden in this
+build because the tvOS home screen has no recommendation shelf. It will return as an optional
+shelf in a later stage.
 
 - **Source.** TMDB `/discover` for that app's mapped watch provider, filtered to the configured
   region. This is **general discovery for that provider**, not the app's internal recommendations.
-  No private app APIs, content channels or program data are read; none are publicly available.
-- **Card focus.** Moves the full-screen backdrop to the card's artwork and updates title, synopsis,
-  year, rating and genres. The row's backdrop is warm-sampled for ambience like the app scene.
-- **OK on a card** launches the focused provider app. Third-party launchers cannot deep-link into a
-  specific title without a public content URI, and those are not exposed.
-- **Fallback.** With no TMDB key, no cached data, offline, or an unmapped app, the row stays hidden
-  and the app keeps its cinematic icon/backdrop scene. The app never shows placeholder titles —
-  cards appear only when real data was fetched and cached.
-- **Attribution.** While a card is focused the metadata block reads
-  `Recommendations from TMDB · general discovery`.
+- **Fallback.** With no TMDB key, no cached data, offline, or an unmapped app, no cards are shown.
+  The launcher never invents placeholder titles.
+- **Attribution.** Real metadata on screen is labelled `Artwork & data: TMDB`.
 
 ## Navigation model
 
 | From | Key | Goes to |
 | --- | --- | --- |
-| Dock | Up | Recommendation row if visible, otherwise the app row |
-| Dock | Down / Back | Stays in the dock |
-| App row | Up | Header actions |
-| App row | Down | Recommendation row if visible, otherwise the dock |
-| App row / dock | Left, Right | Contained at row ends (no focus escaping sideways) |
-| Recommendation row | Up / Down | App row / dock |
-| Recommendation row | Back | App row |
-| Anywhere else | Back | Dock |
+| Top bar | Down | Second app row, same column where possible |
+| Top bar | Up / Back | Stays on the bar |
+| Second row | Up | Top bar, same column where possible |
+| Second row | Down | Stays in the row |
+| Any row | Left, Right | Contained at row ends (no sideways escape) |
+| Second row | Back | Top bar |
+| Top bar | Back | Nothing (Home stays put) |
 
-`OK` only ever launches the focused app or the focused card's provider app; browsing the rows never
-launches anything.
+`OK` only launches the focused app; browsing never launches anything.
+
 
 ## Enable real artwork (TMDB API key)
 
@@ -98,8 +91,8 @@ launches anything.
    TMDB_API_KEY=your_key_here gradle :app:assembleDebug
    ```
 
-   or put `TMDB_API_KEY=your_key_here` in `~/.gradle/gradle.properties`
-   (or `local.properties` via `-PTMDB_API_KEY=...`).
+   or put `TMDB_API_KEY=your_key_here` in `local.properties` (git-ignored) or
+   `~/.gradle/gradle.properties`.
 
 3. Already-built APK? Push the key to the device instead (no rebuild):
 
@@ -143,9 +136,8 @@ adb shell cmd package set-home-activity com.google.android.tvlauncher/.MainActiv
 - Offline: last cached title is shown; otherwise the accent fallback. No blocking dialogs.
 - Missing or disabled apps are skipped during discovery; launch failures show a toast.
 - 720p, 1080p and 4K layouts scale from dp; artwork is requested at 1280 px wide.
-- Recommendation data uses the same 6-hour metadata cache and LRU bitmap cache; card posters are
-  prefetched off the main thread when the row appears.
-- `Inputs` opens TCL's source picker.
+- `Inputs` (TCL source picker) and Control Center are not in this build yet; they return in a
+  later stage.
 
 ## Build
 
