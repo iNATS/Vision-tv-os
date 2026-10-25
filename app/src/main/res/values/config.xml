@@ -1,0 +1,12 @@
+<resources>
+    <integer name="columns">6</integer>
+    <string-array name="dock_apps">
+        <item>com.netflix.ninja</item>
+        <item>com.google.android.youtube.tv</item>
+        <item>com.amazon.amazonvideo.livingroom</item>
+        <item>com.google.android.youtube.tvmusic</item>
+        <item>com.smartdevice.tv.aircast</item>
+        <item>com.tcl.tv</item>
+    </string-array>
+    <integer name="focus_animation_ms">220</integer>
+</resources>

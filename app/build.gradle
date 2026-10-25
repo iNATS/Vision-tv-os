@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The key lives in local.properties (git-ignored) or the environment; never commit it.
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+def tmdbKey = project.findProperty('TMDB_API_KEY')
+        ?: System.getenv('TMDB_API_KEY')
+        ?: localProps.getProperty('TMDB_API_KEY')
+        ?: ''
+def tmdbRegion = project.findProperty('TMDB_REGION')
+        ?: System.getenv('TMDB_REGION')
+        ?: localProps.getProperty('TMDB_REGION')
+        ?: 'US'
+
+android {
+    namespace 'com.aref.visiontv'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.aref.visiontv'
+        minSdk 30
+        targetSdk 35
+        versionCode 2
+        versionName '2.0.0'
+        buildConfigField "String", "TMDB_API_KEY", "\"${tmdbKey}\""
+        buildConfigField "String", "TMDB_REGION", "\"${tmdbRegion}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+}
